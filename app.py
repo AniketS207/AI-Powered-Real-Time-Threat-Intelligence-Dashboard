@@ -5,28 +5,29 @@ import io
 import os
 from dotenv import load_dotenv
 
-st.set_page_config(page_title="VirusTotal IP Scanner", layout="wide")
+# Set Streamlit config
+st.set_page_config(page_title="Threat Intelligence Aggregator + Visualizer", layout="wide")
 
-# ---- Load environment variables ----
+# Load environment variables
 load_dotenv()
-api_key = st.sidebar.text_input("🔐 VirusTotal API Key (leave blank to use .env)", type="password")
+api_key = st.sidebar.text_input("🔐 API Key (leave blank to use .env)", type="password")
 if not api_key:
     api_key = os.getenv("VT_API_KEY")
 
-# ---- Streamlit UI Setup ----
-st.title("🛡️ VirusTotal IP Threat Intelligence")
-
+# UI Header
+st.title("🛡️ Threat Intelligence Aggregator + Visualizer")
 st.markdown("""
-This app checks IP addresses using VirusTotal's API to determine if they are malicious or suspicious.
+This app aggregates threat intelligence for IP addresses using public APIs like VirusTotal.
+More sources will be added soon (e.g., AbuseIPDB, AlienVault OTX).
 """)
 
-# ---- Sidebar Inputs ----
-st.sidebar.header("🔍 IP Address Input")
+# Sidebar input
+st.sidebar.header("🔍 Input IP Addresses")
 ip_input = st.sidebar.text_area("Enter IPs (one per line)")
-uploaded_file = st.sidebar.file_uploader("Or upload .txt/.csv file with IPs", type=["txt", "csv"])
-limit = st.sidebar.slider("Max IPs to scan", 1, 50, 10)
+uploaded_file = st.sidebar.file_uploader("Or upload a .txt or .csv file", type=["txt", "csv"])
+limit = st.sidebar.slider("Max IPs to analyze", 1, 50, 10)
 
-# ---- Process IP List ----
+# Process input
 ip_list = []
 if ip_input:
     ip_list = [ip.strip() for ip in ip_input.splitlines() if ip.strip()]
@@ -35,23 +36,21 @@ elif uploaded_file:
     ip_list = [line.strip() for line in content if line.strip()]
 ip_list = ip_list[:limit]
 
-# ---- VirusTotal Lookup Function ----
-def get_virustotal_ip_report(api_key, ip_address):
+# Lookup Function (VirusTotal for now)
+def get_ip_report_from_virustotal(api_key, ip_address):
     url = f"https://www.virustotal.com/api/v3/ip_addresses/{ip_address}"
     headers = {"x-apikey": api_key}
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
         return response.json()
-    else:
-        return None
+    return None
 
-# ---- Output Section ----
+# Display Results
 results = []
-
 if api_key and ip_list:
-    st.subheader("🧪 VirusTotal IP Reports")
+    st.subheader("📊 Aggregated Threat Intelligence Reports")
     for ip in ip_list:
-        report = get_virustotal_ip_report(api_key, ip)
+        report = get_ip_report_from_virustotal(api_key, ip)
         if report:
             attr = report["data"]["attributes"]
             country = attr.get("country", "N/A")
@@ -76,7 +75,7 @@ if api_key and ip_list:
                 "Suspicious": suspicious
             })
 
-    # ---- Download CSV ----
+    # Download CSV
     if results:
         output = io.StringIO()
         writer = csv.DictWriter(output, fieldnames=results[0].keys())
@@ -85,8 +84,8 @@ if api_key and ip_list:
         st.download_button(
             label="⬇️ Download Results as CSV",
             data=output.getvalue(),
-            file_name="virustotal_  s.csv",
+            file_name="threat_intel_results.csv",
             mime="text/csv"
         )
 else:
-    st.info("👉 Enter IPs and provide your VirusTotal API key or define it in a `.env` file.")
+    st.info("👉 Enter IPs and provide an API key or define it in a `.env` file.")
