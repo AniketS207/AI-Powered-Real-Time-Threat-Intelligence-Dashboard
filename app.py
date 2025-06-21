@@ -5,29 +5,28 @@ import io
 import os
 from dotenv import load_dotenv
 
-# Set Streamlit config
 st.set_page_config(page_title="Threat Intelligence Aggregator + Visualizer", layout="wide")
-
-# Load environment variables
 load_dotenv()
-api_key = st.sidebar.text_input("🔐 API Key (leave blank to use .env)", type="password")
-if not api_key:
-    api_key = os.getenv("VT_API_KEY")
 
-# UI Header
 st.title("🛡️ Threat Intelligence Aggregator + Visualizer")
-st.markdown("""
-This app aggregates threat intelligence for IP addresses using public APIs like VirusTotal.
-More sources will be added soon (e.g., AbuseIPDB, AlienVault OTX).
-""")
 
-# Sidebar input
+st.sidebar.header("🔧 Configuration")
+api_choice = st.sidebar.selectbox("Select Threat Intelligence API", ["VirusTotal", "AbuseIPDB", "AlienVault OTX"])
+api_key = st.sidebar.text_input("🔐 API Key for selected API (leave blank to use .env)", type="password")
+
+api_key_env_map = {
+    "VirusTotal": "VT_API_KEY",
+    "AbuseIPDB": "ABUSEIPDB_API_KEY",
+    "AlienVault OTX": "OTX_API_KEY"
+}
+if not api_key:
+    api_key = os.getenv(api_key_env_map[api_choice])
+
 st.sidebar.header("🔍 Input IP Addresses")
 ip_input = st.sidebar.text_area("Enter IPs (one per line)")
-uploaded_file = st.sidebar.file_uploader("Or upload a .txt or .csv file", type=["txt", "csv"])
+uploaded_file = st.sidebar.file_uploader("Or upload .txt/.csv", type=["txt", "csv"])
 limit = st.sidebar.slider("Max IPs to analyze", 1, 50, 10)
 
-# Process input
 ip_list = []
 if ip_input:
     ip_list = [ip.strip() for ip in ip_input.splitlines() if ip.strip()]
@@ -36,56 +35,78 @@ elif uploaded_file:
     ip_list = [line.strip() for line in content if line.strip()]
 ip_list = ip_list[:limit]
 
-# Lookup Function (VirusTotal for now)
-def get_ip_report_from_virustotal(api_key, ip_address):
-    url = f"https://www.virustotal.com/api/v3/ip_addresses/{ip_address}"
+# API Functions
+def get_virustotal(ip):
+    url = f"https://www.virustotal.com/api/v3/ip_addresses/{ip}"
     headers = {"x-apikey": api_key}
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json()
-    return None
+    resp = requests.get(url, headers=headers)
+    if resp.status_code == 200:
+        data = resp.json()["data"]["attributes"]
+        return {
+            "IP": ip,
+            "Country": data.get("country", "N/A"),
+            "ASN": data.get("asn", "N/A"),
+            "Malicious": data["last_analysis_stats"].get("malicious", 0),
+            "Suspicious": data["last_analysis_stats"].get("suspicious", 0)
+        }
 
-# Display Results
-results = []
-if api_key and ip_list:
-    st.subheader("📊 Aggregated Threat Intelligence Reports")
-    for ip in ip_list:
-        report = get_ip_report_from_virustotal(api_key, ip)
-        if report:
-            attr = report["data"]["attributes"]
-            country = attr.get("country", "N/A")
-            asn = attr.get("asn", "N/A")
-            stats = attr.get("last_analysis_stats", {})
-            malicious = stats.get("malicious", 0)
-            suspicious = stats.get("suspicious", 0)
+def get_abuseipdb(ip):
+    url = "https://api.abuseipdb.com/api/v2/check"
+    headers = {"Key": api_key, "Accept": "application/json"}
+    params = {"ipAddress": ip, "maxAgeInDays": "90"}
+    resp = requests.get(url, headers=headers, params=params)
+    if resp.status_code == 200:
+        data = resp.json()["data"]
+        return {
+            "IP": ip,
+            "Country": data.get("countryCode", "N/A"),
+            "ISP": data.get("isp", "N/A"),
+            "Abuse Confidence": data.get("abuseConfidenceScore", 0)
+        }
 
-            status_icon = "🟥" if malicious > 0 else "🟨" if suspicious > 0 else "🟩"
-            st.markdown(f"""
-**{status_icon} {ip}**
-- Country: `{country}`
-- ASN: `{asn}`
-- Malicious: **{malicious}**
-- Suspicious: **{suspicious}**
-""")
-            results.append({
-                "IP": ip,
-                "Country": country,
-                "ASN": asn,
-                "Malicious": malicious,
-                "Suspicious": suspicious
-            })
+def get_otx(ip):
+    url = f"https://otx.alienvault.com/api/v1/indicators/IPv4/{ip}/general"
+    headers = {"X-OTX-API-KEY": api_key}
+    resp = requests.get(url, headers=headers)
+    if resp.status_code == 200:
+        data = resp.json()
+        return {
+            "IP": ip,
+            "Country": data.get("country_name", "N/A"),
+            "Reputation": data.get("reputation", "N/A"),
+            "Pulses": len(data.get("pulse_info", {}).get("pulses", []))
+        }
 
-    # Download CSV
-    if results:
-        output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=results[0].keys())
-        writer.writeheader()
-        writer.writerows(results)
-        st.download_button(
-            label="⬇️ Download Results as CSV",
-            data=output.getvalue(),
-            file_name="threat_intel_results.csv",
-            mime="text/csv"
-        )
+api_function_map = {
+    "VirusTotal": get_virustotal,
+    "AbuseIPDB": get_abuseipdb,
+    "AlienVault OTX": get_otx
+}
+
+# Main Execution
+if ip_list:
+    if api_choice != "VirusTotal" and not api_key:
+        st.warning(f"⚠️ API key required for {api_choice}. Please enter it to use this source.")
+    else:
+        st.subheader(f"📊 {api_choice} Threat Reports")
+        results = []
+        for ip in ip_list:
+            try:
+                report = api_function_map[api_choice](ip)
+                if report:
+                    st.markdown(f"### 🔎 {ip}")
+                    for k, v in report.items():
+                        if k != "IP":
+                            st.markdown(f"- **{k}**: `{v}`")
+                    results.append(report)
+            except Exception as e:
+                st.error(f"❌ Error processing {ip}: {e}")
+
+        if results:
+            output = io.StringIO()
+            writer = csv.DictWriter(output, fieldnames=results[0].keys())
+            writer.writeheader()
+            writer.writerows(results)
+            st.download_button("⬇️ Download CSV", output.getvalue(), "threat_reports.csv", "text/csv")
 else:
-    st.info("👉 Enter IPs and provide an API key or define it in a `.env` file.")
+    st.info("👉 Enter at least one IP to begin.")
