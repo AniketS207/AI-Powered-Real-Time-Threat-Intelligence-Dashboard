@@ -18,9 +18,6 @@ A real-time, interactive threat intelligence dashboard built with **Streamlit**.
 - 📈 **Real-Time Threat Visualization**  
   View enriched metadata: country, ASN, threat categories, confidence scores, and more.
 
-- 🟥🟨🟩 **Color-Coded Risk Indicators**  
-  Instantly interpret threat levels based on aggregated API signals.
-
 - 🔐 **Secure API Key Handling**  
   Store keys safely in `.env` or input them manually in-app.
 
