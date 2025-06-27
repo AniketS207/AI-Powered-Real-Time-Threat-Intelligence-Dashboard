@@ -3,3 +3,6 @@ requests
 python-dotenv
 schedule
 plotly
+scikit-learn
+joblib
+pandas
