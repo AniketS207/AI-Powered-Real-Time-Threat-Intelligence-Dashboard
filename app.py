@@ -3,11 +3,12 @@ import requests
 import csv
 import io
 import os
-import time
 import joblib
+import plotly.express as px
+import pandas as pd
 from dotenv import load_dotenv
+import alert_manager
 
-# Must be first Streamlit command
 st.set_page_config(page_title="AI-Powered Real-Time Threat Intelligence Dashboard", layout="wide")
 load_dotenv()
 
@@ -18,56 +19,34 @@ def load_model():
 rf_model = load_model()
 st.sidebar.success("✅ AI Model Loaded")
 
-# Session state defaults
 if "fetch_triggered" not in st.session_state:
     st.session_state.fetch_triggered = False
-if "auto_refresh" not in st.session_state:
-    st.session_state.auto_refresh = False
-if "refresh_interval" not in st.session_state:
-    st.session_state.refresh_interval = 15
 
 def trigger_fetch():
     st.session_state.fetch_triggered = True
 
 st.title("🛡️ AI-Powered Real-Time Threat Intelligence Dashboard")
 
-# Sidebar form
+api_key_env_map = {
+    "VirusTotal": "VT_API_KEY",
+    "AbuseIPDB": "ABUSEIPDB_API_KEY",
+    "AlienVault OTX": "OTX_API_KEY"
+}
+
 with st.sidebar.form("input_form"):
     st.header("🔧 Configuration")
-    api_choice = st.selectbox("Select Threat Intelligence API", ["VirusTotal", "AbuseIPDB", "AlienVault OTX"])
-    api_key = st.text_input("🔐 API Key (leave blank to use .env)", type="password")
+    api_choice = st.selectbox("Select Threat Intelligence API", [
+        "Hybrid Fallback", "VirusTotal", "AbuseIPDB", "AlienVault OTX"
+    ])
+    user_api_key = st.text_input("🔐 API Key (leave blank to use .env)", type="password")
 
     st.header("🔍 Input IP Addresses")
     ip_input = st.text_area("Enter IPs (one per line)")
     uploaded_file = st.file_uploader("Or upload .txt/.csv", type=["txt", "csv"])
     limit = st.slider("Max IPs to analyze", 1, 50, 10)
 
-    st.header("⏱ Auto Refresh Settings")
-    auto_refresh = st.checkbox("🔄 Enable Auto Refresh", value=st.session_state.auto_refresh)
-    refresh_interval = st.slider("⏱ Refresh Interval (seconds)", 5, 60, st.session_state.refresh_interval)
+    fetch_btn = st.form_submit_button("🚀 Fetch Threat Reports", on_click=trigger_fetch)
 
-    submitted = st.form_submit_button("🚀 Fetch Threat Reports")
-
-st.session_state.auto_refresh = auto_refresh
-st.session_state.refresh_interval = refresh_interval
-
-if submitted:
-    trigger_fetch()
-
-api_key_env_map = {
-    "VirusTotal": "VT_API_KEY",
-    "AbuseIPDB": "ABUSEIPDB_API_KEY",
-    "AlienVault OTX": "OTX_API_KEY"
-}
-if not api_key:
-    api_key = os.getenv(api_key_env_map[api_choice])
-
-if api_key:
-    st.sidebar.markdown(f"🔑 Using API Key: `{api_key[:4]}****`")
-else:
-    st.sidebar.warning("❌ No API Key Detected")
-
-# IP Input
 ip_list = []
 if ip_input:
     ip_list = [ip.strip() for ip in ip_input.splitlines() if ip.strip()]
@@ -76,10 +55,9 @@ elif uploaded_file:
     ip_list = [line.strip() for line in content if line.strip()]
 ip_list = ip_list[:limit]
 
-# API Functions
-def get_virustotal(ip):
+def get_virustotal(ip, key):
+    headers = {"x-apikey": key}
     url = f"https://www.virustotal.com/api/v3/ip_addresses/{ip}"
-    headers = {"x-apikey": api_key}
     resp = requests.get(url, headers=headers)
     if resp.status_code == 200:
         data = resp.json().get("data", {}).get("attributes", {})
@@ -90,15 +68,14 @@ def get_virustotal(ip):
             "Malicious": data.get("last_analysis_stats", {}).get("malicious", 0),
             "Suspicious": data.get("last_analysis_stats", {}).get("suspicious", 0),
             "Abuse Confidence": 0,
-            "Reputation": 0
+            "Reputation": 0,
+            "Source": "VirusTotal"
         }
-    else:
-        return None
 
-def get_abuseipdb(ip):
-    url = "https://api.abuseipdb.com/api/v2/check"
-    headers = {"Key": api_key, "Accept": "application/json"}
+def get_abuseipdb(ip, key):
+    headers = {"Key": key, "Accept": "application/json"}
     params = {"ipAddress": ip, "maxAgeInDays": "90"}
+    url = "https://api.abuseipdb.com/api/v2/check"
     resp = requests.get(url, headers=headers, params=params)
     if resp.status_code == 200:
         data = resp.json()["data"]
@@ -109,14 +86,13 @@ def get_abuseipdb(ip):
             "Malicious": 0,
             "Suspicious": 0,
             "Abuse Confidence": data.get("abuseConfidenceScore", 0),
-            "Reputation": 0
+            "Reputation": 0,
+            "Source": "AbuseIPDB"
         }
-    else:
-        return None
 
-def get_otx(ip):
+def get_otx(ip, key):
+    headers = {"X-OTX-API-KEY": key}
     url = f"https://otx.alienvault.com/api/v1/indicators/IPv4/{ip}/general"
-    headers = {"X-OTX-API-KEY": api_key}
     resp = requests.get(url, headers=headers)
     if resp.status_code == 200:
         data = resp.json()
@@ -126,10 +102,9 @@ def get_otx(ip):
             "Malicious": 0,
             "Suspicious": 0,
             "Abuse Confidence": 0,
-            "Reputation": data.get("reputation", 0)
+            "Reputation": data.get("reputation", 0),
+            "Source": "AlienVault OTX"
         }
-    else:
-        return None
 
 api_function_map = {
     "VirusTotal": get_virustotal,
@@ -137,56 +112,106 @@ api_function_map = {
     "AlienVault OTX": get_otx
 }
 
-# Main Execution
-if st.session_state.fetch_triggered:
-    if not ip_list:
-        st.info("👉 Enter at least one IP to begin.")
-    elif api_choice != "VirusTotal" and not api_key:
-        st.warning(f"⚠️ API key required for {api_choice}. Please enter it to use this source.")
-    else:
-        st.subheader(f"📊 {api_choice} Threat Reports")
-        results = []
+def get_hybrid_report(ip, manual_key=None):
+    fallback_keys = {
+        "VirusTotal": os.getenv("VT_API_KEY"),
+        "AbuseIPDB": os.getenv("ABUSEIPDB_API_KEY"),
+        "AlienVault OTX": os.getenv("OTX_API_KEY")
+    }
+    functions = {
+        "VirusTotal": get_virustotal,
+        "AbuseIPDB": get_abuseipdb,
+        "AlienVault OTX": get_otx
+    }
 
-        for ip in ip_list:
+    for name, func in functions.items():
+        key_to_use = manual_key if manual_key else fallback_keys.get(name)
+        if key_to_use:
             try:
-                report = api_function_map[api_choice](ip)
+                result = func(ip, key_to_use)
+                if result:
+                    result["Source"] = name
+                    return result
+            except:
+                continue
+    return None
 
-                if not report:
-                    st.warning(f"⚠️ No data found for {ip}. Skipping.")
-                    continue
+def run_analysis(ip_list):
+    results = []
+    for ip in ip_list:
+        try:
+            if api_choice == "Hybrid Fallback":
+                report = get_hybrid_report(ip, manual_key=user_api_key)
+            else:
+                key = user_api_key if user_api_key else os.getenv(api_key_env_map.get(api_choice, ""))
+                report = api_function_map[api_choice](ip, key)
 
-                st.markdown(f"### 🔎 {ip}")
-                st.json(report)
+            if not report:
+                continue
 
-                for k, v in report.items():
-                    if k != "IP":
-                        st.markdown(f"- **{k}**: `{v}`")
+            features_df = pd.DataFrame([{
+                "Malicious": report.get("Malicious", 0) or 0,
+                "Suspicious": report.get("Suspicious", 0) or 0,
+                "Abuse Confidence": report.get("Abuse Confidence", 0) or 0,
+                "Reputation": report.get("Reputation", 0) or 0
+            }])
 
-                try:
-                    features = [
-                        report.get("Malicious", 0) or 0,
-                        report.get("Suspicious", 0) or 0,
-                        report.get("Abuse Confidence", 0) or 0,
-                        report.get("Reputation", 0) or 0
-                    ]
-                    risk = rf_model.predict([features])[0]
-                    st.markdown(f"- **🧠 AI Risk Level**: `{risk}`")
-                except Exception as e:
-                    st.error(f"⚠️ AI Prediction Error: {e}")
+            try:
+                risk = rf_model.predict(features_df)[0]
+                report["AI Risk"] = risk
+            except:
+                report["AI Risk"] = "Error"
 
-                results.append(report)
-
+            try:
+                alert_manager.check_alerts(report)
+                if report.get("Abuse Confidence", 0) > 0 or report.get("Malicious", 0) > 0:
+                    st.success(f"📧 Email alert sent for suspicious IP: {report['IP']}")
+                    alert_manager.send_email_alert(report['IP'], report)
+                    print(f"[✔] Email alert sent for {report['IP']}")
             except Exception as e:
-                st.error(f"❌ Error processing {ip}: {e}")
+                st.error(f"❌ Failed to send email alert for {report['IP']}")
+                print(f"Email alert failed for {report['IP']}: {e}")
 
-        if results:
-            output = io.StringIO()
-            writer = csv.DictWriter(output, fieldnames=results[0].keys())
-            writer.writeheader()
-            writer.writerows(results)
-            st.download_button("⬇️ Download CSV", output.getvalue(), "threat_reports.csv", "text/csv")
+            results.append(report)
+        except Exception as e:
+            print(f"Error processing {ip}: {e}")
+            continue
+    return results
 
-# Auto-refresh
-if st.session_state.auto_refresh and st.session_state.fetch_triggered:
-    time.sleep(st.session_state.refresh_interval)
-    st.rerun()
+
+def render_visualizations(results):
+    df = pd.DataFrame(results)
+
+    if "Country" in df.columns:
+        country_counts = df["Country"].value_counts().reset_index()
+        country_counts.columns = ["Country", "Count"]
+        bar_fig = px.bar(country_counts, x="Country", y="Count", title="🌍 Top Threat Source Countries",
+                         color="Count", color_continuous_scale="reds")
+        st.plotly_chart(bar_fig, use_container_width=True)
+
+    if "Malicious" in df.columns and "Suspicious" in df.columns:
+        threat_summary = pd.DataFrame({
+            "Threat Type": ["Malicious", "Suspicious"],
+            "Count": [df["Malicious"].sum(), df["Suspicious"].sum()]
+        })
+        line_fig = px.line(threat_summary, x="Threat Type", y="Count", markers=True,
+                           title="📈 Threat Detection Summary")
+        st.plotly_chart(line_fig, use_container_width=True)
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=results[0].keys())
+    writer.writeheader()
+    writer.writerows(results)
+    st.download_button("⬇️ Download CSV", output.getvalue(), "threat_reports.csv", "text/csv")
+
+if st.session_state.fetch_triggered:
+    st.subheader("📊 Threat Reports")
+    results = run_analysis(ip_list)
+    for report in results:
+        st.markdown(f"### 🔎 {report['IP']}")
+        for k, v in report.items():
+            if k != "IP":
+                st.markdown(f"- **{k}**: `{v}`")
+    if results:
+        render_visualizations(results)
+
