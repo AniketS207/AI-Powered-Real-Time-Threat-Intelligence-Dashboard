@@ -8,9 +8,11 @@ import plotly.express as px
 import pandas as pd
 from dotenv import load_dotenv
 import alert_manager
+from db_manager import init_db, save_report 
 
 st.set_page_config(page_title="AI-Powered Real-Time Threat Intelligence Dashboard", layout="wide")
 load_dotenv()
+init_db()
 
 @st.cache_resource
 def load_model():
@@ -25,7 +27,7 @@ if "fetch_triggered" not in st.session_state:
 def trigger_fetch():
     st.session_state.fetch_triggered = True
 
-st.title("🛡️ AI-Powered Real-Time Threat Intelligence Dashboard")
+st.title("🔡 AI-Powered Real-Time Threat Intelligence Dashboard")
 
 api_key_env_map = {
     "VirusTotal": "VT_API_KEY",
@@ -172,12 +174,12 @@ def run_analysis(ip_list):
                 st.error(f"❌ Failed to send email alert for {report['IP']}")
                 print(f"Email alert failed for {report['IP']}: {e}")
 
+            save_report(report)  # Save to database
             results.append(report)
         except Exception as e:
             print(f"Error processing {ip}: {e}")
             continue
     return results
-
 
 def render_visualizations(results):
     df = pd.DataFrame(results)
@@ -204,6 +206,16 @@ def render_visualizations(results):
     writer.writerows(results)
     st.download_button("⬇️ Download CSV", output.getvalue(), "threat_reports.csv", "text/csv")
 
+    # Historical Report Viewer
+    from db_manager import get_all_reports
+    with st.expander("📂 View Stored Reports"):
+        stored = get_all_reports()
+        if stored:
+            df_hist = pd.DataFrame(stored, columns=["ID", "IP", "Abuse", "Malicious", "AI Risk", "Source", "Timestamp"])
+            st.dataframe(df_hist)
+        else:
+            st.info("No historical data found.")
+
 if st.session_state.fetch_triggered:
     st.subheader("📊 Threat Reports")
     results = run_analysis(ip_list)
@@ -214,4 +226,3 @@ if st.session_state.fetch_triggered:
                 st.markdown(f"- **{k}**: `{v}`")
     if results:
         render_visualizations(results)
-
