@@ -1,119 +1,98 @@
 # 🛡️ AI-Powered Real-Time Threat Intelligence Dashboard
 
-A real-time, interactive cyber threat intelligence dashboard built using **Streamlit** and powered by **AI**, providing in-depth analysis of IP addresses through multiple public threat feeds. The tool combines data from **AbuseIPDB**, **AlienVault OTX**, and **VirusTotal**, enriched with **machine learning-based threat classification**, **automated email alerts**, and **SQLite-based logging** for historical tracking.
+A real-time, interactive cyber threat intelligence dashboard built using **Streamlit** and powered by **AI**, offering deep IP threat analysis from multiple open-source feeds. It leverages **VirusTotal**, **AbuseIPDB**, and **AlienVault OTX**, enriched by a **machine learning risk model**, **automated email alerting**, and **SQLite logging**. Built for threat hunters, analysts, and cybersecurity enthusiasts.
 
----
+
 
 ## 🚀 Key Features
 
 * 🔎 **Flexible IP Input**
-
   * Enter IPs manually or upload `.txt` / `.csv` files for bulk scanning.
 
-* 🧠 **AI Threat Classification**
+* 🧠 **AI-Powered Risk Prediction**
+  * Uses a trained Random Forest model to classify IPs into `Low`, `Medium`, or `High` risk.
 
-  * Uses a trained ML model (e.g., Random Forest) to predict threat levels: `Low`, `Medium`, or `High`.
+* 🌐 **Multi-Source Threat Intelligence**
+  * Pulls data from:
+    * **AbuseIPDB** – abuse score, ISP, country
+    * **VirusTotal** – AV engine verdicts & behavior
+    * **AlienVault OTX** – community threat intelligence
 
-* 🌐 **Multi-Source Threat Feed Aggregation**
+* 📧 **Real-Time Email Alerts**
+  * Sends SMTP alerts when high-risk IPs are detected (`Abuse Score > 0` or `Malicious > 0`).
 
-  * **AbuseIPDB**: Reputation and abuse confidence
-  * **AlienVault OTX**: Community-powered IOCs
-  * **VirusTotal**: Antivirus and behavioral engine reports
+* 📊 **Interactive Dashboards**
+  * Charts for country-based threats, malicious/suspicious activity, and risk classification.
 
-* 📊 **Real-Time Threat Visualization**
+* 📄 **PDF + CSV Export**
+  * Export reports with both raw results and visual threat summaries.
 
-  * Interactive charts showing risk levels, country distribution, and threat categories.
+* 🗃️ **SQLite Logging**
+  * All scans are logged and viewable within the Streamlit dashboard.
 
-* 🔐 **Secure API Key Management**
+* 🔐 **Secure Key Handling**
+  * API keys can be securely loaded from `.env` or entered at runtime.
 
-  * Store keys in `.env` file or input securely via Streamlit sidebar.
+* ⚙️ **Scalable & Modular Architecture**
+  * Easily extend with more feeds like Shodan, Censys, GreyNoise, etc.
 
-* 📧 **Automated Email Alerts**
 
-  * Sends real-time SMTP alerts when high-risk IPs (e.g., abuse score > 90) are detected.
-
-* 🗃️ **SQLite-Based Logging**
-
-  * Stores results locally for future reference and auditability.
-
-* 📄 **Export Results**
-
-  * Download threat analysis reports as `.csv`.
-
-* 🧰 **Modular & Extensible Codebase**
-
-  * Easily extend with other threat intelligence APIs (Shodan, GreyNoise, Censys, etc.)
-
----
 
 ## 🛠️ Tech Stack
 
 * **Python 3.x**
-* **Streamlit** – Frontend UI
-* **Requests** – API integration
-* **Scikit-learn** – AI risk model
+* **Streamlit** – UI & interactivity
+* **Scikit-learn** – AI model for threat classification
 * **Plotly / Pandas** – Visualization
-* **SQLite3** – Local data logging
-* **python-dotenv** – Secure API key management
-* **smtplib** – Email alerting
+* **Requests** – API consumption
+* **SQLite3** – Local data storage
+* **smtplib** – SMTP alerting
+* **python-dotenv** – API key & credential management
 
----
+
 
 ## 📦 Installation
 
-```bash
 git clone https://github.com/<your-username>/ai-threat-intel-dashboard.git
 cd ai-threat-intel-dashboard
 
-# Create virtual environment
 python -m venv .venv
 source .venv/bin/activate  # macOS/Linux
 .\.venv\Scripts\activate   # Windows
 
-# Install dependencies
 pip install -r requirements.txt
-```
 
----
+
 
 ## ▶️ Run the App
 
-```bash
 streamlit run app.py
-```
 
-Visit: [http://localhost:8501](http://localhost:8501)
 
----
 
 ## 🔐 .env Configuration (Optional)
 
-Create a `.env` file for your API keys and email credentials:
+Create a .env file for API keys and SMTP credentials:
 
-```env
 VT_API_KEY=your_virustotal_api_key
-ABUSEIPDB_API_KEY=your_abuseipdb_key
-OTX_API_KEY=your_otx_key
+ABUSEIPDB_API_KEY=your_abuseipdb_api_key
+OTX_API_KEY=your_otx_api_key
 
 EMAIL_FROM=you@gmail.com
 EMAIL_TO=you@gmail.com
 EMAIL_PASS=your_gmail_app_password
-```
 
----
+
 
 ## 📊 Sample IPs to Test
 
-```text
+185.220.101.1
 45.129.2.59
-185.38.175.132
-222.186.30.120
-23.154.177.4
-121.148.236.5
 193.106.191.35
-```
+23.154.177.4
+222.186.30.120
+121.148.236.5
 
----
 
 ## 🔮 Coming Soon
 
@@ -122,14 +101,13 @@ EMAIL_PASS=your_gmail_app_password
 * ☁️ Cloud dashboard + MongoDB sync
 * 🔎 IOC filtering, search, and tagging
 
----
+
 
 ## 🧠 Author
 
-**Aniket Sinha**
+**AniketS207**
 Cybersecurity Enthusiast | Threat Hunter | SOC Analyst (Aspirant)
 
----
 
 ## 📜 License
 
