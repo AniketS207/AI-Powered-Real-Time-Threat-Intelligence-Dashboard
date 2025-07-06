@@ -9,6 +9,8 @@ import pandas as pd
 from dotenv import load_dotenv
 import alert_manager
 from db_manager import init_db, save_report 
+from report_generator import export_pdf_report
+
 
 st.set_page_config(page_title="AI-Powered Real-Time Threat Intelligence Dashboard", layout="wide")
 load_dotenv()
@@ -199,6 +201,18 @@ def render_visualizations(results):
         line_fig = px.line(threat_summary, x="Threat Type", y="Count", markers=True,
                            title="📈 Threat Detection Summary")
         st.plotly_chart(line_fig, use_container_width=True)
+    if results:
+        sample_report = results[0]
+        chart_data = {
+            "Abuse Score": sample_report.get("Abuse Confidence", 0),
+            "Malicious": sample_report.get("Malicious", 0),
+            "Suspicious": sample_report.get("Suspicious", 0),
+            "Reputation": sample_report.get("Reputation", 0)
+        }
+        export_pdf_report(sample_report, chart_data)
+        with open("Threat_Report.pdf", "rb") as pdf_file:
+            st.download_button("⬇️ Download PDF Report", data=pdf_file, file_name="Threat_Report.pdf", mime="application/pdf")
+
 
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=results[0].keys())
