@@ -11,6 +11,7 @@ import alert_manager
 from db_manager import init_db, save_report, get_all_reports
 from report_generator import export_pdf_report
 from intel_utils import get_virustotal, get_abuseipdb, get_otx, get_hybrid_report, api_function_map
+import numpy as np
 
 st.set_page_config(page_title="🛡️ AI Threat Intelligence Dashboard", layout="wide")
 load_dotenv()
@@ -71,6 +72,7 @@ def run_analysis(ip_list):
         "AbuseIPDB": os.getenv("ABUSEIPDB_API_KEY"),
         "AlienVault OTX": os.getenv("OTX_API_KEY")
     }
+    risk_map_inv = {0: "Low", 1: "Medium", 2: "High"}
 
     for ip in ip_list:
         try:
@@ -83,18 +85,22 @@ def run_analysis(ip_list):
             if not report:
                 continue
 
-            features_df = pd.DataFrame([{
-                "Malicious": report.get("Malicious", 0) or 0,
-                "Suspicious": report.get("Suspicious", 0) or 0,
-                "Abuse Confidence": report.get("Abuse Confidence", 0) or 0,
-                "Reputation": report.get("Reputation", 0) or 0
-            }])
-
             try:
+                features_df = pd.DataFrame([{
+                    "Malicious": report.get("Malicious", 0) or 0,
+                    "Suspicious": report.get("Suspicious", 0) or 0,
+                    "Abuse Confidence": report.get("Abuse Confidence", 0) or 0,
+                    "Reputation": report.get("Reputation", 0) or 0
+                }]) 
+
+                if features_df.isnull().values.any():
+                    raise ValueError("NaN in features")
+
                 risk = rf_model.predict(features_df)[0]
-                report["AI Risk"] = risk
-            except:
-                report["AI Risk"] = "Error"
+                report["Risk"] = risk_map_inv.get(risk, "Unknown")
+            except Exception as e:
+                st.error(f"⚠️ AI Risk prediction failed for {report['IP']}: {e}")
+                report["Risk"] = "Error"
 
             try:
                 if report.get("Abuse Confidence", 0) > 0 or report.get("Malicious", 0) > 0:
@@ -132,7 +138,7 @@ def render_visualizations():
     with st.expander("📂 View Stored Reports"):
         stored = get_all_reports()
         if stored:
-            df_hist = pd.DataFrame(stored, columns=["ID", "IP", "Abuse", "Malicious", "AI Risk", "Source", "Timestamp"])
+            df_hist = pd.DataFrame(stored, columns=["ID", "IP", "Abuse", "Malicious", "Risk", "Source", "Timestamp"])
             st.dataframe(df_hist)
         else:
             st.info("No historical data found.")
@@ -140,14 +146,12 @@ def render_visualizations():
 if fetch_btn and ip_list:
     st.session_state.results = run_analysis(ip_list)
     if st.session_state.results:
-        # Save CSV once
         output = io.StringIO()
         writer = csv.DictWriter(output, fieldnames=st.session_state.results[0].keys())
         writer.writeheader()
         writer.writerows(st.session_state.results)
         st.session_state.csv_data = output.getvalue()
 
-        # Save PDF once
         sample_report = st.session_state.results[0]
         chart_data = {
             "Abuse Score": sample_report.get("Abuse Confidence", 0),
@@ -167,11 +171,9 @@ if st.session_state.results:
                 st.markdown(f"- **{k}**: `{v}`")
     render_visualizations()
 
-    # Only show after results are ready
     if st.session_state.pdf_ready:
         with open("Threat_Report.pdf", "rb") as pdf_file:
             st.download_button("⬇️ Download PDF Report", data=pdf_file, file_name="Threat_Report.pdf", mime="application/pdf")
 
     if st.session_state.csv_data:
         st.download_button("⬇️ Download CSV", st.session_state.csv_data, "threat_reports.csv", "text/csv")
-    

@@ -10,11 +10,18 @@ def export_pdf_report(ip_data, chart_data, filename="Threat_Report.pdf"):
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 10, "Incident Report - AI Threat Detection", ln=True, align="C")
 
-
     pdf.ln(10)
     pdf.set_font("Arial", size=12)
+
     for key, value in ip_data.items():
-        pdf.cell(0, 10, f"{key}: {value}", ln=True)
+        # Rename 'AI Risk' to 'Risk' for display purposes
+        if key == "AI Risk":
+            key = "Risk"
+        try:
+            text_value = str(value)
+        except Exception:
+            text_value = "Error"
+        pdf.cell(0, 10, f"{key}: {text_value}", ln=True)
 
     # Chart generation
     plt.figure(figsize=(4, 3))
